@@ -1,0 +1,321 @@
+ uv run python 01_pydantic_models.py
+============================================================
+DEMO: Basic Pydantic Model
+============================================================
+
+Created task: task='Review the API design document' owner='Alice' priority='high' estimated_hours=2.0
+  task: Review the API design document
+  owner: Alice
+  priority: high
+  estimated_hours: 2.0
+
+With defaults: priority=medium, hours=1.0
+
+============================================================
+DEMO: JSON Schema (what the LLM sees)
+============================================================
+
+This schema is sent to the LLM when your tool uses TaskItem:
+{
+  "description": "A single task extracted from a meeting transcript.\n\nThe Field descriptions tell the LLM what each field should contain.\nWhen the LLM calls a tool with this model as input, it reads these\ndescriptions to understand what data to extract.",
+  "properties": {
+    "task": {
+      "description": "The action item or task to be done",
+      "title": "Task",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Person responsible for this task (a real name, not 'TBD')",
+      "title": "Owner",
+      "type": "string"
+    },
+    "priority": {
+      "default": "medium",
+      "description": "Priority level: high (urgent), medium (normal), low (backlog)",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "title": "Priority",
+      "type": "string"
+    },
+    "estimated_hours": {
+      "default": 1.0,
+      "description": "Estimated hours to complete (e.g., 0.5, 1, 2, 4)",
+      "title": "Estimated Hours",
+      "type": "number"
+    }
+  },
+  "required": [
+    "task",
+    "owner"
+  ],
+  "title": "TaskItem",
+  "type": "object"
+}
+
+💡 Notice how Field descriptions appear in the schema!
+   The LLM reads these to understand what data to provide.
+
+============================================================
+DEMO: Automatic Type Validation
+============================================================
+
+Trying invalid priority='urgent' (not in Literal choices)...
+  ❌ ValidationError: Input should be 'high', 'medium' or 'low'
+
+Trying missing required field (no owner)...
+  ❌ ValidationError: Field required
+
+✅ Pydantic catches invalid data before it causes problems!
+
+============================================================
+DEMO: Custom Field Validator
+============================================================
+
+Trying estimated_hours=-5 (negative)...
+  ❌ ValidationError: Value error, estimated_hours must be a positive number (e.g., 0.5, 1, 2, 4). Got: -5.0
+
+Trying estimated_hours=0 (zero)...
+  ❌ ValidationError: Value error, estimated_hours must be a positive number (e.g., 0.5, 1, 2, 4). Got: 0.0
+
+Trying estimated_hours=2.5 (valid)...
+  ✅ Created successfully: 2.5 hours
+
+============================================================
+DEMOS COMPLETE — Now running solved exercises!
+============================================================
+
+============================================================
+EXERCISE 1: Task length validator
+============================================================
+
+Trying task='Do' (too short)...
+  ❌ Value error, task must be at least 5 characters long. Provide a clear, descriptive action item instead of an abbreviation.
+
+Trying task='Fix it' (6 chars, valid)...
+  ✅ Created: task='Fix it'
+
+============================================================
+EXERCISE 2: Model validator (max 8 hours)
+============================================================
+
+Trying estimated_hours=40 (too large)...
+
+Trying estimated_hours=4 (valid)...
+  ✅ Created: task='Refactor auth module', hours=4.0
+
+============================================================
+EXERCISE 3: Nested MeetingNote model
+============================================================
+
+MeetingNote: Sprint Planning
+  Attendees: ['Alice', 'Bob', 'Charlie']
+  Tasks: 2
+    - Design API (Alice, high, 1.0h)
+    - Write tests (Bob, medium, 3.0h)
+
+Nested JSON schema:
+{
+  "$defs": {
+    "TaskItem": {
+      "description": "A single task extracted from a meeting transcript.\n\nThe Field descriptions tell the LLM what each field should contain.\nWhen the LLM calls a tool with this model as input, it reads these\ndescriptions to understand what data to extract.",
+      "properties": {
+        "task": {
+          "description": "The action item or task to be done",
+          "title": "Task",
+          "type": "string"
+        },
+        "owner": {
+          "description": "Person responsible for this task (a real name, not 'TBD')",
+          "title": "Owner",
+          "type": "string"
+        },
+        "priority": {
+          "default": "medium",
+          "description": "Priority level: high (urgent), medium (normal), low (backlog)",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "estimated_hours": {
+          "default": 1.0,
+          "description": "Estimated hours to complete (e.g., 0.5, 1, 2, 4)",
+          "title": "Estimated Hours",
+          "type": "number"
+        }
+      },
+      "required": [
+        "task",
+        "owner"
+      ],
+      "title": "TaskItem",
+      "type": "object"
+    }
+  },
+  "description": "A meeting note containing multiple tasks.",
+  "properties": {
+    "meeting_title": {
+      "description": "Title or subject of the meeting",
+      "title": "Meeting Title",
+      "type": "string"
+    },
+    "attendees": {
+      "description": "List of people who attended the meeting",
+      "items": {
+        "type": "string"
+      },
+      "title": "Attendees",
+      "type": "array"
+    },
+    "tasks": {
+      "description": "Action items extracted from the meeting",
+      "items": {
+        "$ref": "#/$defs/TaskItem"
+      },
+      "title": "Tasks",
+      "type": "array"
+    },
+    "summary": {
+      "description": "Brief summary of what was discussed and decided",
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "meeting_title",
+    "attendees",
+    "tasks",
+    "summary"
+  ],
+  "title": "MeetingNote",
+  "type": "object"
+}
+
+============================================================
+EXERCISE 4: Thought Exercise Answers
+============================================================
+
+SCENARIO 1: Good validation (catching mistakes)
+  Transcript: "Alice will handle the security fix"
+  LLM output: {"task": "Fix", "owner": "Alice", "estimated_hours": -1}
+
+  Q1: Which validator catches this? Is it a MISTAKE or BUSINESS RULE?
+  A1: The hours_must_be_positive validator catches estimated_hours=-1.
+      This is a MISTAKE — negative hours is nonsensical, not a business rule.
+
+  Q2: After retry, what's a reasonable corrected value?
+  A2: The LLM would likely output estimated_hours=1.0 (the default) or a
+      small positive number. Either is reasonable since the transcript
+      didn't specify a duration.
+
+  Q3: Was the retry worth the extra tokens?
+  A3: Yes — it caught a genuinely invalid value. The corrected output is
+      more accurate than leaving -1 in the data.
+
+SCENARIO 2: Risky validation (fighting the content)
+  Transcript: "The database migration will take about 3 weeks of work"
+  LLM output: {"task": "Database migration", "owner": "Bob", "estimated_hours": 120}
+
+  Q4: If you have a "max 8 hours" validator, what happens?
+  A4: The validator rejects 120 hours. The LLM retries, maybe tries 40,
+      then 8. Each retry burns tokens. The validator is fighting what the
+      transcript actually said.
+
+  Q5: The LLM retries and eventually outputs 8 hours. Is this accurate?
+  A5: No — 8 hours doesn't reflect the 3-week estimate from the meeting.
+      The validator forced the LLM to produce inaccurate data.
+
+  Q6: You paid for 3 API calls. Was this validation worth it?
+  A6: No. The original 120h was the correct extraction. The validator
+      enforced a business rule (break down tasks) that should be handled
+      at the application/workflow level, not at the extraction level.
+
+SCENARIO 3: When is Pydantic overkill?
+  Task: Extract just the meeting title from a transcript
+
+  Q7: Do you need a full Pydantic model with validators for this?
+  A7: No. A single string extraction doesn't benefit from schema
+      generation, nested validation, or retry loops.
+
+  Q8: What's a simpler approach that might work?
+  A8: A simple prompt like "Extract the meeting title from this transcript.
+      Reply with just the title." and use the raw string response. No
+      framework overhead needed.
+
+
+============================================================
+BONUS: CustomerSupportTicket model
+============================================================
+
+Ticket: Cannot login after password reset
+  Customer: Jane Doe
+  Severity: high
+  Category: bug
+  Description: Customer reports that after resetting password via email lin...
+
+JSON Schema:
+{
+  "description": "A customer support ticket extracted from a conversation or email.",
+  "properties": {
+    "subject": {
+      "description": "Brief subject line summarizing the issue",
+      "title": "Subject",
+      "type": "string"
+    },
+    "customer_name": {
+      "description": "Full name of the customer",
+      "title": "Customer Name",
+      "type": "string"
+    },
+    "severity": {
+      "default": "medium",
+      "description": "Severity: critical (service down), high (major feature broken), medium (minor issue), low (question/enhancement)",
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "category": {
+      "description": "Category of the support request",
+      "enum": [
+        "bug",
+        "feature_request",
+        "billing",
+        "account",
+        "other"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "description": {
+      "description": "Detailed description of the issue or request",
+      "title": "Description",
+      "type": "string"
+    }
+  },
+  "required": [
+    "subject",
+    "customer_name",
+    "category",
+    "description"
+  ],
+  "title": "CustomerSupportTicket",
+  "type": "object"
+}
+
+Testing validation — short subject:
+  ❌ Value error, subject must be at least 10 characters. Provide a concise but descriptive summary of the issue, e.g. 'Cannot login after password reset'.
+
+============================================================
+ALL EXERCISES COMPLETE ✅
+============================================================
