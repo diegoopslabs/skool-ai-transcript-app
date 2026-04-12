@@ -388,9 +388,10 @@ class TaskItemWithValidation(BaseModel):
     @field_validator("task")
     @classmethod
     def task_must_be_descriptive(cls, v):
-        if len(v) < 5:
+        minimum_length = 5
+        if len(v) < minimum_length:
             raise ValueError(
-                "task must be at least 5 characters long. "
+                f"task must be at least {minimum_length} characters long. "
                 "Provide a clear, descriptive action item instead of an abbreviation."
             )
         return v
