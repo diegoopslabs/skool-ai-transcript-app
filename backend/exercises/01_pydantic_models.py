@@ -53,7 +53,7 @@ Run: uv run python exercises/01_pydantic_models.py
 import json
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 # =============================================================================
 # CONCEPT: Field() and descriptions - talking to the LLM
@@ -320,19 +320,6 @@ def demo_field_validator():
     )
     print(f"  ✅ Created successfully: {task.estimated_hours} hours")
 
-    print("\n💡 These error messages would be sent to the LLM for retry!")
-
-
-if __name__ == "__main__":
-    demo_basic_model()
-    demo_json_schema()
-    demo_automatic_validation()
-    demo_field_validator()
-
-    print("\n" + "=" * 60)
-    print("DEMOS COMPLETE - Now try the exercises below!")
-    print("=" * 60)
-
 
 # =============================================================================
 # =============================================================================
@@ -376,6 +363,53 @@ if __name__ == "__main__":
 #   - "Read https://docs.pydantic.dev/latest/concepts/validators/ and show me
 #      how to write a @field_validator that checks string length"
 # =============================================================================
+
+
+class TaskItemWithValidation(BaseModel):
+    """TaskItem with custom validators that provide LLM feedback."""
+
+    task: str = Field(description="The action item or task to be done")
+    owner: str = Field(description="Person responsible (a real name, not 'TBD')")
+    priority: Literal["high", "medium", "low"] = Field(default="medium")
+    estimated_hours: float = Field(
+        default=1.0, description="Estimated hours to complete (must be positive)"
+    )
+
+    @field_validator("estimated_hours")
+    @classmethod
+    def hours_must_be_positive(cls, v):
+        if v <= 0:
+            raise ValueError(
+                f"estimated_hours must be a positive number (e.g., 0.5, 1, 2, 4). Got: {v}"
+            )
+        return v
+
+    # EXERCISE 1: field validator for task length
+    @field_validator("task")
+    @classmethod
+    def task_must_be_descriptive(cls, v):
+        if len(v) < 5:
+            raise ValueError(
+                "task must be at least 5 characters long. "
+                "Provide a clear, descriptive action item instead of an abbreviation."
+            )
+        return v
+
+
+def exercise_1_task_length_validator():
+    print("\n" + "=" * 60)
+    print("EXERCISE 1: Task length validator")
+    print("=" * 60)
+
+    print("\nTrying task='Do' (too short)...")
+    try:
+        TaskItemWithValidation(task="Do", owner="Alice")
+    except ValidationError as e:
+        print(f"  ❌ {e.errors()[0]['msg']}")
+
+    print("\nTrying task='Fix it' (6 chars, valid)...")
+    t = TaskItemWithValidation(task="Fix it", owner="Alice")
+    print(f"  ✅ Created: task='{t.task}'")
 
 
 # =============================================================================
@@ -431,6 +465,38 @@ if __name__ == "__main__":
 # =============================================================================
 
 
+# EXERCISE 2: model validator for manageable task size
+@model_validator(mode="after")
+def tasks_should_be_manageable(self):
+    """Tasks over 8 hours should be broken into smaller chunks."""
+    if self.estimated_hours > 8:
+        raise ValueError(
+            f"Task estimated at {self.estimated_hours} hours is too large. "
+            "Break into smaller tasks (max 8 hours each)."
+        )
+    return self
+
+
+def exercise_2_model_validator():
+    print("\n" + "=" * 60)
+    print("EXERCISE 2: Model validator (max 8 hours)")
+    print("=" * 60)
+
+    print("\nTrying estimated_hours=40 (too large)...")
+    try:
+        TaskItemWithValidation(
+            task="Rewrite entire codebase", owner="Alice", estimated_hours=40
+        )
+    except ValidationError as e:
+        print(f"  ❌ {e.errors()[0]['msg']}")
+
+    print("\nTrying estimated_hours=4 (valid)...")
+    t = TaskItemWithValidation(
+        task="Refactor auth module", owner="Alice", estimated_hours=4
+    )
+    print(f"  ✅ Created: task='{t.task}', hours={t.estimated_hours}")
+
+
 # =============================================================================
 # EXERCISE 3: Create a nested model (MeetingNote with TaskItems)
 # =============================================================================
@@ -474,6 +540,39 @@ if __name__ == "__main__":
 #   - "Read https://docs.pydantic.dev/latest/concepts/models/ and show me
 #      how to create a model with a list of nested models"
 # =============================================================================
+
+
+class MeetingNote(BaseModel):
+    """A meeting note containing multiple tasks."""
+
+    meeting_title: str = Field(description="Title or subject of the meeting")
+    attendees: list[str] = Field(description="List of people who attended the meeting")
+    tasks: list[TaskItem] = Field(description="Action items extracted from the meeting")
+    summary: str = Field(description="Brief summary of what was discussed and decided")
+
+
+def exercise_3_nested_model():
+    print("\n" + "=" * 60)
+    print("EXERCISE 3: Nested MeetingNote model")
+    print("=" * 60)
+
+    note = MeetingNote(
+        meeting_title="Sprint Planning",
+        attendees=["Alice", "Bob", "Charlie"],
+        tasks=[
+            TaskItem(task="Design API", owner="Alice", priority="high"),
+            TaskItem(task="Write tests", owner="Bob", estimated_hours=3),
+        ],
+        summary="Planned Q1 deliverables",
+    )
+    print(f"\nMeetingNote: {note.meeting_title}")
+    print(f"  Attendees: {note.attendees}")
+    print(f"  Tasks: {len(note.tasks)}")
+    for t in note.tasks:
+        print(f"    - {t.task} ({t.owner}, {t.priority}, {t.estimated_hours}h)")
+
+    print("\nNested JSON schema:")
+    print(json.dumps(MeetingNote.model_json_schema(), indent=2))
 
 
 # =============================================================================
@@ -535,6 +634,63 @@ if __name__ == "__main__":
 # =============================================================================
 
 
+def exercise_4_thought_exercise():
+    print("\n" + "=" * 60)
+    print("EXERCISE 4: Thought Exercise Answers")
+    print("=" * 60)
+
+    print(
+        """
+SCENARIO 1: Good validation (catching mistakes)
+  Transcript: "Alice will handle the security fix"
+  LLM output: {"task": "Fix", "owner": "Alice", "estimated_hours": -1}
+
+  Q1: Which validator catches this? Is it a MISTAKE or BUSINESS RULE?
+  A1: The hours_must_be_positive validator catches estimated_hours=-1.
+      This is a MISTAKE — negative hours is nonsensical, not a business rule.
+
+  Q2: After retry, what's a reasonable corrected value?
+  A2: The LLM would likely output estimated_hours=1.0 (the default) or a
+      small positive number. Either is reasonable since the transcript
+      didn't specify a duration.
+
+  Q3: Was the retry worth the extra tokens?
+  A3: Yes — it caught a genuinely invalid value. The corrected output is
+      more accurate than leaving -1 in the data.
+
+SCENARIO 2: Risky validation (fighting the content)
+  Transcript: "The database migration will take about 3 weeks of work"
+  LLM output: {"task": "Database migration", "owner": "Bob", "estimated_hours": 120}
+
+  Q4: If you have a "max 8 hours" validator, what happens?
+  A4: The validator rejects 120 hours. The LLM retries, maybe tries 40,
+      then 8. Each retry burns tokens. The validator is fighting what the
+      transcript actually said.
+
+  Q5: The LLM retries and eventually outputs 8 hours. Is this accurate?
+  A5: No — 8 hours doesn't reflect the 3-week estimate from the meeting.
+      The validator forced the LLM to produce inaccurate data.
+
+  Q6: You paid for 3 API calls. Was this validation worth it?
+  A6: No. The original 120h was the correct extraction. The validator
+      enforced a business rule (break down tasks) that should be handled
+      at the application/workflow level, not at the extraction level.
+
+SCENARIO 3: When is Pydantic overkill?
+  Task: Extract just the meeting title from a transcript
+
+  Q7: Do you need a full Pydantic model with validators for this?
+  A7: No. A single string extraction doesn't benefit from schema
+      generation, nested validation, or retry loops.
+
+  Q8: What's a simpler approach that might work?
+  A8: A simple prompt like "Extract the meeting title from this transcript.
+      Reply with just the title." and use the raw string response. No
+      framework overhead needed.
+"""
+    )
+
+
 # =============================================================================
 # BONUS: Design validators for your own use case
 # =============================================================================
@@ -555,3 +711,96 @@ if __name__ == "__main__":
 #   - "Review my Pydantic model - are the Field descriptions clear enough
 #      for an LLM to understand? Are the validator error messages helpful?"
 # =============================================================================
+
+
+class CustomerSupportTicket(BaseModel):
+    """A customer support ticket extracted from a conversation or email."""
+
+    subject: str = Field(description="Brief subject line summarizing the issue")
+    customer_name: str = Field(description="Full name of the customer")
+    severity: Literal["critical", "high", "medium", "low"] = Field(
+        default="medium",
+        description="Severity: critical (service down), high (major feature broken), "
+        "medium (minor issue), low (question/enhancement)",
+    )
+    category: Literal["bug", "feature_request", "billing", "account", "other"] = Field(
+        description="Category of the support request"
+    )
+    description: str = Field(description="Detailed description of the issue or request")
+
+    @field_validator("subject")
+    @classmethod
+    def subject_must_be_meaningful(cls, v):
+        if len(v) < 10:
+            raise ValueError(
+                "subject must be at least 10 characters. Provide a concise but "
+                "descriptive summary of the issue, e.g. 'Cannot login after password reset'."
+            )
+        return v
+
+    @field_validator("description")
+    @classmethod
+    def description_must_have_detail(cls, v):
+        if len(v) < 20:
+            raise ValueError(
+                "description must be at least 20 characters. Include what the customer "
+                "reported, any error messages, and steps to reproduce if applicable."
+            )
+        return v
+
+
+def bonus_custom_model():
+    print("\n" + "=" * 60)
+    print("BONUS: CustomerSupportTicket model")
+    print("=" * 60)
+
+    ticket = CustomerSupportTicket(
+        subject="Cannot login after password reset",
+        customer_name="Jane Doe",
+        severity="high",
+        category="bug",
+        description="Customer reports that after resetting password via email link, "
+        "the new password is rejected with 'invalid credentials' error.",
+    )
+    print(f"\nTicket: {ticket.subject}")
+    print(f"  Customer: {ticket.customer_name}")
+    print(f"  Severity: {ticket.severity}")
+    print(f"  Category: {ticket.category}")
+    print(f"  Description: {ticket.description[:60]}...")
+
+    print("\nJSON Schema:")
+    print(json.dumps(CustomerSupportTicket.model_json_schema(), indent=2))
+
+    print("\nTesting validation — short subject:")
+    try:
+        CustomerSupportTicket(
+            subject="Help",
+            customer_name="John",
+            category="bug",
+            description="Something is broken and I cannot use the product at all.",
+        )
+    except ValidationError as e:
+        print(f"  ❌ {e.errors()[0]['msg']}")
+
+
+if __name__ == "__main__":
+    # Original demos
+    demo_basic_model()
+    demo_json_schema()
+    demo_automatic_validation()
+    demo_field_validator()
+
+    print("\n" + "=" * 60)
+    print("DEMOS COMPLETE — Now running solved exercises!")
+    print("=" * 60)
+
+    # Solved exercises
+    exercise_1_task_length_validator()
+    exercise_2_model_validator()
+    exercise_3_nested_model()
+    exercise_4_thought_exercise()
+    bonus_custom_model()
+
+    print("\n" + "=" * 60)
+    print("ALL EXERCISES COMPLETE ✅")
+    print("=" * 60)
